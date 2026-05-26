@@ -5,6 +5,7 @@ import cors from "cors";
 import connectDB from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
+import matchRoutes from "./routes/matchRoutes.js";
 await connectDB();
 
 const app = express();
@@ -20,6 +21,7 @@ app.use(
 
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
+app.use("/api/match", matchRoutes);
 
 app.get("/", (req, res) => {
   res.send("API Working");
