@@ -3,6 +3,7 @@ import API from "../lib/api";
 import { Mail, Lock, GraduationCapIcon } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
+import { useAuth } from "../context/AuthContext";
 
 function Login() {
   const navigate = useNavigate();
@@ -11,6 +12,8 @@ function Login() {
     email: "",
     password: "",
   });
+
+  const { setUser } = useAuth();
 
   const [loading, setLoading] = useState(false);
 
@@ -30,7 +33,7 @@ function Login() {
       const res = await API.post("/auth/login", form);
 
       localStorage.setItem("token", res.data.token);
-
+      setUser(res.data);
       toast.success("Welcome back 🚀");
 
       navigate("/");

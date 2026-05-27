@@ -3,9 +3,11 @@ import API from "../lib/api";
 import { GraduationCapIcon, Lock, Mail, User } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
 import toast from "react-hot-toast";
+import { useAuth } from "../context/AuthContext";
 
 function Register() {
   const navigate = useNavigate();
+  const { setUser } = useAuth();
 
   const [form, setForm] = useState({
     name: "",
@@ -36,7 +38,7 @@ function Register() {
       const res = await API.post("/auth/register", form);
 
       localStorage.setItem("token", res.data.token);
-
+      setUser(res.data);
       toast.success("Account created successfully 🚀");
 
       navigate("/");
