@@ -1,17 +1,12 @@
-import { useState } from "react";
-import { createContext } from "react";
+import { createContext, useState, useEffect, useContext } from "react";
 import API from "../lib/api";
-import { useEffect } from "react";
-import { useContext } from "react";
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-
   const [loading, setLoading] = useState(true);
 
-  //get Logged in user
   const fetchMe = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -20,7 +15,8 @@ export const AuthProvider = ({ children }) => {
         setLoading(false);
         return;
       }
-      const res = await API.get("users/me");
+
+      const res = await API.get("/users/me");
       setUser(res.data);
     } catch (error) {
       console.log(error);

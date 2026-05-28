@@ -14,18 +14,19 @@ import userRoutes from "./routes/userRoutes.js";
 import matchRoutes from "./routes/matchRoutes.js";
 import SwapRequestRoutes from "./routes/swapRequestRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
+
 await connectDB();
 
 const app = express();
 
 app.use(helmet());
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-});
-
-app.use(limiter);
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+  }),
+);
 
 app.use(express.json());
 
@@ -36,16 +37,15 @@ app.use(
   }),
 );
 
-//routes
+// routes
 app.use("/api/auth", authRoutes);
-app.use("/api/user", userRoutes);
+app.use("/api/users", userRoutes);
 app.use("/api/match", matchRoutes);
 app.use("/api/swap", SwapRequestRoutes);
 app.use("/api/messages", messageRoutes);
 
 const server = http.createServer(app);
 
-// socket setup
 const io = new Server(server, {
   cors: {
     origin: "http://localhost:5173",
@@ -53,67 +53,50 @@ const io = new Server(server, {
   },
 });
 
-const onlineUsers = new Map();
-
+// socket logic
 io.on("connection", (socket) => {
-  console.log("User connected", socket.id);
+  console.log("User connected:", socket.id);
 
-  // join room
+  // join user room
   socket.on("join_room", (userId) => {
     socket.join(userId);
-
-    onlineUsers.set(userId, socket.id);
-
-    io.emit("online_users", Array.from(onlineUsers.keys()));
-  });
-
-  // typing
-  socket.on("typing", ({ senderId, receiverId }) => {
-    const receiverSocketId = onlineUsers.get(receiverId);
-
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit("typing", {
-        senderId,
-      });
-    }
-  });
-
-  // stop typing
-  socket.on("stop_typing", ({ senderId, receiverId }) => {
-    const receiverSocketId = onlineUsers.get(receiverId);
-
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit("stop_typing", {
-        senderId,
-      });
-    }
   });
 
   // send message
   socket.on("send_message", async (data) => {
-    const newMessage = await Message.create({
-      sender: data.senderId,
-      receiver: data.receiverId,
-      message: data.message,
-    });
+    try {
+      if (!data.message?.trim()) return;
 
-    io.to(data.receiverId).emit("receive_message", newMessage);
+      const newMessage = await Message.create({
+        sender: data.senderId,
+        receiver: data.receiverId,
+        message: data.message,
+      });
 
-    io.to(data.senderId).emit("receive_message", newMessage);
+      // optional: populate sender info
+      await newMessage.populate("sender", "name");
+
+      // send to receiver
+      io.to(data.receiverId).emit("receive_message", newMessage);
+
+      // send to sender
+      io.to(data.senderId).emit("receive_message", newMessage);
+    } catch (err) {
+      console.log("Socket message error:", err.message);
+    }
   });
 
-  // disconnect
+  // typing indicator
+  socket.on("typing", ({ senderId, receiverId }) => {
+    io.to(receiverId).emit("typing", { senderId });
+  });
+
+  socket.on("stop_typing", ({ senderId, receiverId }) => {
+    io.to(receiverId).emit("stop_typing", { senderId });
+  });
+
   socket.on("disconnect", () => {
-    console.log("User disconnected", socket.id);
-
-    for (let [userId, socketId] of onlineUsers) {
-      if (socketId === socket.id) {
-        onlineUsers.delete(userId);
-        break;
-      }
-    }
-
-    io.emit("online_users", Array.from(onlineUsers.keys()));
+    console.log("User disconnected:", socket.id);
   });
 });
 
