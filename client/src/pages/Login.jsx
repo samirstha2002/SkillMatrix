@@ -32,7 +32,7 @@ function Login() {
 
       const res = await API.post("/auth/login", form);
 
-      localStorage.setItem("token", res.data.token);
+      sessionStorage.setItem("token", res.data.token);
       setUser(res.data);
       toast.success("Welcome back 🚀");
 

@@ -1,5 +1,6 @@
 import { createContext, useState, useEffect, useContext } from "react";
 import API from "../lib/api";
+import socket from "../lib/socket";
 
 const AuthContext = createContext();
 
@@ -9,26 +10,34 @@ export const AuthProvider = ({ children }) => {
 
   const fetchMe = async () => {
     try {
-      const token = localStorage.getItem("token");
+      const token = sessionStorage.getItem("token");
 
       if (!token) {
+        setUser(null);
         setLoading(false);
         return;
       }
 
       const res = await API.get("/users/me");
       setUser(res.data);
+
+      // ✅ Connect socket after confirming user is logged in
+      if (!socket.connected) {
+        socket.connect();
+      }
     } catch (error) {
       console.log(error);
-      localStorage.removeItem("token");
+      sessionStorage.removeItem("token");
+      setUser(null);
     } finally {
       setLoading(false);
     }
   };
 
   const logout = () => {
-    localStorage.removeItem("token");
+    sessionStorage.removeItem("token");
     setUser(null);
+    socket.disconnect(); // ✅ Disconnect socket on logout
   };
 
   useEffect(() => {
@@ -36,7 +45,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, logout }}>
+    <AuthContext.Provider value={{ user, setUser, loading, logout, fetchMe }}>
       {children}
     </AuthContext.Provider>
   );

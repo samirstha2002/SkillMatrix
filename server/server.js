@@ -5,7 +5,9 @@ import "dotenv/config";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import jwt from "jsonwebtoken";
 
+import chatRoutes from "./routes/chatRoutes.js";
 import errorMiddleware from "./middleware/errorMiddleware.js";
 import Message from "./models/Message.js";
 import connectDB from "./config/db.js";
@@ -14,6 +16,7 @@ import userRoutes from "./routes/userRoutes.js";
 import matchRoutes from "./routes/matchRoutes.js";
 import SwapRequestRoutes from "./routes/swapRequestRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
+import SwapRequest from "./models/SwapRequest.js";
 
 await connectDB();
 
@@ -43,50 +46,99 @@ app.use("/api/users", userRoutes);
 app.use("/api/match", matchRoutes);
 app.use("/api/swap", SwapRequestRoutes);
 app.use("/api/messages", messageRoutes);
+app.use("/api/chat", chatRoutes);
 
 const server = http.createServer(app);
 
-const io = new Server(server, {
+export const io = new Server(server, {
   cors: {
     origin: "http://localhost:5173",
     credentials: true,
   },
 });
 
-// socket logic
+// ✅ Track online users: userId -> Set of socketIds (handles multiple tabs)
+const onlineUsers = new Map();
+
+// Helper: broadcast the current online user IDs to everyone
+const broadcastOnlineUsers = () => {
+  io.emit("online_users", Array.from(onlineUsers.keys()));
+};
+
+// SOCKET AUTH
+io.use((socket, next) => {
+  try {
+    const token = socket.handshake.auth.token;
+
+    if (!token) return next(new Error("No token"));
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    socket.userId = decoded.id;
+
+    next();
+  } catch (err) {
+    next(new Error("Unauthorized"));
+  }
+});
+
+// SOCKET LOGIC
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
+  console.log("User connected:", socket.userId);
 
-  // join user room
-  socket.on("join_room", (userId) => {
-    socket.join(userId);
-  });
+  // Auto join user's own room using authenticated userId
+  socket.join(socket.userId);
 
-  // send message
+  // ✅ Add to online users map and broadcast
+  if (!onlineUsers.has(socket.userId)) {
+    onlineUsers.set(socket.userId, new Set());
+  }
+  onlineUsers.get(socket.userId).add(socket.id);
+  broadcastOnlineUsers();
+
+  // SEND MESSAGE
   socket.on("send_message", async (data) => {
     try {
       if (!data.message?.trim()) return;
 
+      // ✅ Always use socket.userId — never trust data.senderId from client
+      const senderId = socket.userId;
+      const receiverId = data.receiverId;
+
+      // ✅ Check accepted swap before allowing message
+      const isAllowed = await SwapRequest.findOne({
+        status: "accepted",
+        $or: [
+          { sender: senderId, receiver: receiverId },
+          { sender: receiverId, receiver: senderId },
+        ],
+      });
+
+      if (!isAllowed) {
+        socket.emit("error", {
+          message: "You can only chat with accepted swap partners",
+        });
+        return;
+      }
+
+      const conversationId = [senderId, receiverId].sort().join("_");
+
       const newMessage = await Message.create({
-        sender: data.senderId,
-        receiver: data.receiverId,
+        conversationId,
+        sender: senderId,
+        receiver: receiverId,
         message: data.message,
       });
 
-      // optional: populate sender info
       await newMessage.populate("sender", "name");
 
-      // send to receiver
-      io.to(data.receiverId).emit("receive_message", newMessage);
-
-      // send to sender
-      io.to(data.senderId).emit("receive_message", newMessage);
+      io.to(receiverId).emit("receive_message", newMessage);
+      io.to(senderId).emit("receive_message", newMessage);
     } catch (err) {
-      console.log("Socket message error:", err.message);
+      console.log(err.message);
     }
   });
 
-  // typing indicator
+  // TYPING
   socket.on("typing", ({ senderId, receiverId }) => {
     io.to(receiverId).emit("typing", { senderId });
   });
@@ -95,8 +147,18 @@ io.on("connection", (socket) => {
     io.to(receiverId).emit("stop_typing", { senderId });
   });
 
+  // ✅ On disconnect, remove socket from online map and broadcast
   socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
+    console.log("User disconnected:", socket.userId);
+
+    const sockets = onlineUsers.get(socket.userId);
+    if (sockets) {
+      sockets.delete(socket.id);
+      if (sockets.size === 0) {
+        onlineUsers.delete(socket.userId); // fully offline
+      }
+    }
+    broadcastOnlineUsers();
   });
 });
 

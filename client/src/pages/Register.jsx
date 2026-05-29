@@ -37,7 +37,7 @@ function Register() {
 
       const res = await API.post("/auth/register", form);
 
-      localStorage.setItem("token", res.data.token);
+      sessionStorage.setItem("token", res.data.token);
       setUser(res.data);
       toast.success("Account created successfully 🚀");
 

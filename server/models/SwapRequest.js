@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+
 const swapRequestSchema = new mongoose.Schema(
   {
     sender: {
@@ -11,24 +12,21 @@ const swapRequestSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-
     offeredSkill: {
       type: String,
       required: true,
     },
-
     requestedSkill: {
       type: String,
       required: true,
     },
-
     status: {
       type: String,
       enum: ["pending", "accepted", "rejected"],
       default: "pending",
     },
   },
-  { timeStamps: true },
+  { timestamps: true }, // ✅ Fixed typo (was timeStamps)
 );
 
 const SwapRequest = mongoose.model("SwapRequest", swapRequestSchema);
