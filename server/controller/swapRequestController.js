@@ -43,7 +43,7 @@ export const getMyRequests = asyncHandler(async (req, res) => {
     receiver: req.user._id,
     status: "pending",
   })
-    .populate("sender", "name email")
+    .populate("sender", "name email profilePic")
     .sort({ createdAt: -1 });
 
   res.json(requests);
@@ -54,7 +54,7 @@ export const getSentRequests = asyncHandler(async (req, res) => {
   const requests = await SwapRequest.find({
     sender: req.user._id,
   })
-    .populate("receiver", "name email")
+    .populate("receiver", "name email profilePic")
     .sort({ createdAt: -1 });
 
   res.json(requests);

@@ -1,16 +1,12 @@
 import Message from "../models/Message.js";
-import User from "../models/User.js";
 import SwapRequest from "../models/SwapRequest.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 
-// -----------------------------
 // GET CONVERSATION MESSAGES
-// -----------------------------
 export const getConversationMessages = asyncHandler(async (req, res) => {
   const myId = req.user._id;
   const otherId = req.params.userId;
 
-  // ✅ Only accepted swap partners can read each other's messages
   const isAllowed = await SwapRequest.findOne({
     status: "accepted",
     $or: [
@@ -26,21 +22,16 @@ export const getConversationMessages = asyncHandler(async (req, res) => {
   }
 
   const conversationId = [myId, otherId].sort().join("_");
-
   const messages = await Message.find({ conversationId }).sort({
     createdAt: 1,
   });
-
   res.json(messages);
 });
 
-// -----------------------------
-// CHAT LIST (ONLY ACCEPTED USERS)
-// -----------------------------
+// CHAT LIST
 export const getChatList = asyncHandler(async (req, res) => {
   const myId = req.user._id;
 
-  // only accepted swap users
   const swaps = await SwapRequest.find({
     status: "accepted",
     $or: [{ sender: myId }, { receiver: myId }],
@@ -55,10 +46,9 @@ export const getChatList = asyncHandler(async (req, res) => {
         : swap.sender;
 
     const conversationId = [myId, otherUser._id].sort().join("_");
-
-    const lastMessage = await Message.findOne({
-      conversationId,
-    }).sort({ createdAt: -1 });
+    const lastMessage = await Message.findOne({ conversationId }).sort({
+      createdAt: -1,
+    });
 
     chatMap.set(otherUser._id.toString(), {
       user: otherUser,
@@ -68,4 +58,37 @@ export const getChatList = asyncHandler(async (req, res) => {
   }
 
   res.json(Array.from(chatMap.values()));
+});
+
+// ✅ DELETE SINGLE MESSAGE (only sender can delete)
+export const deleteMessage = asyncHandler(async (req, res) => {
+  const myId = req.user._id;
+  const { messageId } = req.params;
+
+  const message = await Message.findOne({ _id: messageId, sender: myId });
+
+  if (!message) {
+    return res
+      .status(404)
+      .json({ message: "Message not found or not authorized" });
+  }
+
+  await message.deleteOne();
+  res.json({ message: "Message deleted", messageId });
+});
+
+// ✅ DELETE ENTIRE CONVERSATION (only deletes for the requester)
+export const deleteConversation = asyncHandler(async (req, res) => {
+  const myId = req.user._id;
+  const otherId = req.params.userId;
+
+  const conversationId = [myId, otherId].sort().join("_");
+
+  // Delete all messages where current user is sender or receiver
+  await Message.deleteMany({
+    conversationId,
+    $or: [{ sender: myId }, { receiver: myId }],
+  });
+
+  res.json({ message: "Conversation deleted" });
 });
